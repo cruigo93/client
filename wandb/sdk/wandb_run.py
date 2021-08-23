@@ -376,10 +376,13 @@ class Run(object):
             and os.path.exists(self._settings.launch_config_path)
         ):
             with open(self._settings.launch_config_path) as fp:
-                launch_config = json.loads(fp.read())
-            self._config.update_locked(
-                launch_config, user="launch", _allow_val_change=True
-            )
+                launch_metadata = json.loads(fp.read())
+            overrides = launch_metadata.get("overrides", {})
+            launch_run_config = overrides.get("run_config", None)
+            if launch_run_config:
+                self._config.update_locked(
+                    launch_run_config, user="launch", _allow_val_change=True
+                )
         self._config._update(config, ignore_locked=True)
 
         self._atexit_cleanup_called = False

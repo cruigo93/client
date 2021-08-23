@@ -109,7 +109,10 @@ def pull_docker_image(docker_image: str) -> None:
 
 
 def build_docker_image(
-    launch_project: _project_spec.LaunchProject, base_image: str, copy_code: bool,
+    launch_project: _project_spec.LaunchProject,
+    base_image: str,
+    docker_args: Dict[str, Any],
+    copy_code: bool,
 ) -> Union[Model, Any]:
     """Build a docker image containing the project in `work_dir`, using the base image.
 
@@ -159,11 +162,15 @@ def build_docker_image(
         workdir_line=workdir_line,
         name_line=name_line,
     )
+
+    launch_metadata = create_launch_metadata(launch_project, docker_args, dockerfile)
+
     build_ctx_path = _create_docker_build_ctx(
-        launch_project.project_dir,
-        dockerfile,
-        launch_project._runtime,
-        launch_project.override_config,
+        launch_project,
+        launch_metadata,
+        # dockerfile,
+        # launch_project._runtime,
+        # launch_project.override_config,
     )
     with open(build_ctx_path, "rb") as docker_build_ctx:
         _logger.info("=== Building docker image %s ===", image_uri)
@@ -275,27 +282,31 @@ def _get_docker_image_uri(name: str, work_dir: str) -> str:
 
 
 def _create_docker_build_ctx(
-    work_dir: str,
-    dockerfile_contents: str,
-    runtime: Optional[str],
-    run_config: Dict[str, Any],
+    launch_project: _project_spec.LaunchProject,
+    launch_metadata: Dict[str, Any]
+    # dockerfile_contents: str,
+    # runtime: Optional[str],
+    # run_config: Dict[str, Any],
 ) -> str:
     """Creates build context tarfile containing Dockerfile and project code, returning path to tarfile."""
     directory = tempfile.mkdtemp()
+    work_dir = launch_project.project_dir
     try:
         dst_path = os.path.join(directory, "wandb-project-contents")
         shutil.copytree(src=work_dir, dst=dst_path)
-        if run_config:
-            config_path = os.path.join(dst_path, _project_spec.DEFAULT_CONFIG_PATH)
-            with open(config_path, "w") as fp:
-                json.dump(run_config, fp)
+        # if run_config:
+        config_path = os.path.join(dst_path, _project_spec.DEFAULT_CONFIG_PATH)
+        with open(config_path, "w") as fp:
+            json.dump(launch_metadata, fp)
+            # json.dump(run_config, fp)
+        runtime = launch_metadata.get("runtime")
         if runtime:
             runtime_path = os.path.join(dst_path, "runtime.txt")
             with open(runtime_path, "w") as fp:
                 fp.write(runtime)
 
         with open(os.path.join(dst_path, _GENERATED_DOCKERFILE_NAME), "w") as handle:
-            handle.write(dockerfile_contents)
+            handle.write(launch_metadata["dockerfile"])
         _, result_path = tempfile.mkstemp()
         wandb.util.make_tarfile(
             output_filename=result_path,
@@ -305,3 +316,16 @@ def _create_docker_build_ctx(
     finally:
         shutil.rmtree(directory)
     return result_path
+
+
+def create_launch_metadata(
+    launch_project: _project_spec.LaunchProject,
+    docker_args: Dict[str, Any],
+    docker_file: str,
+):
+    return {
+        **launch_project.launch_spec,
+        "docker_args": docker_args,
+        "dockerfile": docker_file,
+        "runtime": launch_project._runtime or None,
+    }

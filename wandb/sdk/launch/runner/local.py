@@ -5,6 +5,8 @@ import subprocess
 import sys
 from typing import Any, Dict, List, Optional
 
+from six.moves import shlex_quote
+
 import wandb
 from wandb.errors import CommError, LaunchError
 
@@ -92,17 +94,25 @@ class LocalRunner(AbstractRunner):
         command_separator = " "
         validate_docker_env(launch_project)
         validate_docker_installation()
+
         image = build_docker_image(
             launch_project=launch_project,
             base_image=launch_project.docker_image,
+            docker_args=docker_args,
             copy_code=copy_code,
         )
+
         command_args += get_docker_command(
-            image=image,
+            image,
             launch_project=launch_project,
             api=self._api,
             docker_args=docker_args,
         )
+
+        command_args += get_entry_point_command(
+            entry_point, launch_project.override_args
+        )
+
         if self.backend_config.get("runQueueItemId"):
             try:
                 self._api.ack_run_queue_item(
@@ -118,9 +128,7 @@ class LocalRunner(AbstractRunner):
         # updates to the tracking server when finished. Note that the run state may not be
         # persisted to the tracking server if interrupted
         if synchronous:
-            command_args += get_entry_point_command(
-                entry_point, launch_project.override_args
-            )
+
             command_str = command_separator.join(command_args)
 
             wandb.termlog(
